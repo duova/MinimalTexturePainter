@@ -41,11 +41,11 @@ void Renderer::render(const unsigned int framebuffer, const CameraParams& camera
 	constexpr float nearPlane = 1.0f;
 	constexpr float farPlane = 20.0f;
 	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane, farPlane);
-	glm::mat4 lightView = glm::lookAt(-glm::normalize(cameraParams.forward) * 10.f,
-		glm::vec3(0.0f, 0.0f, 0.0f),
+	glm::mat4 lightView = glm::lookAt(-glm::normalize(directionalLight.direction) * 10.f,
+		glm::vec3(0.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f));
 	glm::mat4 lightSpace = lightProjection * lightView;
-	shadowShader.setMat4("lightSpace", lightSpace);
+	shadowShader.setMat4("lightSpaceMatrix", lightSpace);
 
 	for (const WorldObject& object : objects)
 	{
@@ -76,6 +76,13 @@ void Renderer::render(const unsigned int framebuffer, const CameraParams& camera
 	mainShader.setVec3("dirLight.ambient", directionalLight.ambient);
 	mainShader.setVec3("dirLight.diffuse", directionalLight.diffuse);
 	mainShader.setVec3("dirLight.specular", directionalLight.specular);
+
+	glActiveTexture(GL_TEXTURE15);
+	glUniform1i(glGetUniformLocation(mainShader.getID(), "shadowMap"), 15);
+	glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+	glActiveTexture(GL_TEXTURE0);
+
+	mainShader.setMat4("lightSpaceMatrix", lightSpace);
 
 	for (const WorldObject& object : objects)
 	{

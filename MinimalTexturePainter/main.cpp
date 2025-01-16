@@ -92,7 +92,7 @@ int main()
 	Shader mainShader("default.vert", "default.frag");
 	Shader shadowShader("shadow.vert", "shadow.frag");
 	Shader quadShader("quad.vert", "quad.frag");
-	Renderer renderer(mainShader, shadowShader, 1024, 1024);
+	Renderer renderer(mainShader, shadowShader, 4096, 4096);
 
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
@@ -221,7 +221,7 @@ void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& qua
 		glm::radians(60.f),
 		(float)screen_width/(float)screen_height};
 	DirectionalLight dirLight{glm::vec3(1.0f, -1.0f, -0.1f),
-		glm::vec3(0.05f, 0.05f, 0.05f),
+		glm::vec3(0.2f, 0.2f, 0.2f),
 		glm::vec3(0.8f, 0.8f, 0.8f),
 		glm::vec3(1.0f, 1.0f, 1.0f)};
 

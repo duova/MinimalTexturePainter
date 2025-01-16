@@ -16,6 +16,8 @@ struct Material {
 };
 uniform Material material;
 
+uniform sampler2D shadowMap;
+
 out vec4 FragColor;
 
 uniform vec3 viewPos;
@@ -23,8 +25,11 @@ uniform vec3 viewPos;
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
+in vec4 FragPosLightSpace;
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
+
+float ShadowCalculation(vec4 fragPosLightSpace);
 
 void main()
 {
@@ -52,5 +57,19 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
     TexCoords));
     vec3 specular = light.specular * spec * vec3(texture(material.texture_specular1,
     TexCoords));
-    return (ambient + diffuse + specular);
+    float shadow = ShadowCalculation(FragPosLightSpace);
+    return (ambient + (1.0 - shadow) * (diffuse + specular));
+}
+
+float ShadowCalculation(vec4 fragPosLightSpace)
+{
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
+    float currentDepth = projCoords.z;
+
+    float bias = max(0.005 * (1.0 - dot(Normal, -dirLight.direction)), 0.0005);
+    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+
+    return shadow;
 }
