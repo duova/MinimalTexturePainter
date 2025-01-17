@@ -13,7 +13,7 @@ void Model::loadModel(string path)
 {
 	Assimp::Importer import;
 	const aiScene* scene = import.ReadFile(path, aiProcess_Triangulate |
-		aiProcess_FlipUVs);
+		aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE ||
 		!scene->mRootNode)
 	{
@@ -55,6 +55,11 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene)
 		vector.y = mesh->mNormals[i].y;
 		vector.z = mesh->mNormals[i].z;
 		vertex.normal = vector;
+
+		vector.x = mesh->mTangents[i].x;
+		vector.y = mesh->mTangents[i].y;
+		vector.z = mesh->mTangents[i].z;
+		vertex.tangent = vector;
 
 		if (mesh->mTextureCoords[0]) //Some meshes don't have texCoords
 		{
@@ -117,7 +122,7 @@ vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type,
 		if (!skip)
 		{ // if texture hasn’t been loaded already, load it
 			Texture texture;
-			texture.id = textureFromFile(str.C_Str(), directory);
+			texture.id = textureFromFile(str.C_Str(), directory, typeName == "texture_diffuse");
 			texture.type = typeName;
 			texture.path = str.C_Str();
 			textures.push_back(texture);
@@ -127,7 +132,7 @@ vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type,
 	return textures;
 }
 
-unsigned int Model::textureFromFile(const char* path, const string& directory)
+unsigned int Model::textureFromFile(const char* path, const string& directory, bool useSRGB)
 {
 	string filename = string(path);
 	filename = directory + '\\' + filename;
@@ -142,23 +147,35 @@ unsigned int Model::textureFromFile(const char* path, const string& directory)
 	if (data)
 	{
 		GLenum format = 0;
+		GLenum internalFormat = 0;
 		if (nrComponents == 1)
+		{
 			format = GL_RED;
+			internalFormat = GL_RED;
+		}
 		else if (nrComponents == 3)
+		{
 			format = GL_RGB;
+			internalFormat = useSRGB ? GL_SRGB : GL_RGB;
+		}
 		else if (nrComponents == 4)
+		{
 			format = GL_RGBA;
+			internalFormat = useSRGB ? GL_SRGB_ALPHA : GL_RGBA;
+		}
 
 		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glTexImage2D(GL_TEXTURE_2D, 0, (int)internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
 		glGenerateMipmap(GL_TEXTURE_2D);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glBindTexture(GL_TEXTURE_2D, 0);
 
 		stbi_image_free(data);
+
 	}
 	else
 	{

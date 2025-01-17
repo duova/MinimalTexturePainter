@@ -220,10 +220,10 @@ void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& qua
 		glm::vec3(0, 1, 0),
 		glm::radians(60.f),
 		(float)screen_width/(float)screen_height};
-	DirectionalLight dirLight{glm::vec3(1.0f, -1.0f, -0.1f),
+	DirectionalLight dirLight{ glm::vec3(1.0f, -1.0f, -0.1f),
 		glm::vec3(0.2f, 0.2f, 0.2f),
-		glm::vec3(0.8f, 0.8f, 0.8f),
-		glm::vec3(1.0f, 1.0f, 1.0f)};
+		glm::vec3(1.6f, 1.6f, 1.6f),
+		glm::vec3(2.0f, 2.0f, 2.0f)};
 
 	renderer.render(mainFramebuffer, cameraParams, worldObjects, dirLight, screen_width, screen_height);
 

@@ -29,7 +29,7 @@ void Mesh::draw(Shader& shader) const
             number = std::to_string(normalNr++);
 
         //Get the texture unit and bind.
-        glUniform1i(glGetUniformLocation(shader.getID(), (name + number).c_str()), i);
+        glUniform1i(glGetUniformLocation(shader.getID(), (("material." + name).append(number)).c_str()), i);
         glBindTexture(GL_TEXTURE_2D, textures[i].id);
     }
 
@@ -66,5 +66,7 @@ void Mesh::setupMesh()
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoords));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tangent));
     glBindVertexArray(0);
 }

@@ -40,7 +40,7 @@ void Renderer::render(const unsigned int framebuffer, const CameraParams& camera
 
 	constexpr float nearPlane = 1.0f;
 	constexpr float farPlane = 20.0f;
-	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane, farPlane);
+	glm::mat4 lightProjection = glm::ortho(-2.0f, 2.0f, -2.0f, 2.0f, nearPlane, farPlane);
 	glm::mat4 lightView = glm::lookAt(-glm::normalize(directionalLight.direction) * 10.f,
 		glm::vec3(0.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f));
@@ -87,10 +87,8 @@ void Renderer::render(const unsigned int framebuffer, const CameraParams& camera
 	for (const WorldObject& object : objects)
 	{
 		glm::mat4 model = object.getTransform();
-		glm::mat3 normalMatrix = transpose(inverse(model));
 
 		mainShader.setMat4("model", model);
-		mainShader.setMat3("normalMatrix", normalMatrix);
 
 		object.getModel().draw(mainShader);
 	}

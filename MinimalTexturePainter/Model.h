@@ -27,5 +27,5 @@ private:
 	Mesh processMesh(aiMesh* mesh, const aiScene* scene);
 	vector<Texture> loadMaterialTextures(aiMaterial* mat,
 		aiTextureType type, string typeName);
-	unsigned int textureFromFile(const char* path, const string& directory);
+	unsigned int textureFromFile(const char* path, const string& directory, bool useSRGB);
 };
