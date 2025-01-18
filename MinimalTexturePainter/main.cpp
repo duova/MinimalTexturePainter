@@ -1,5 +1,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -32,24 +33,53 @@ unsigned int quadEBO;
 unsigned int mainFramebuffer;
 unsigned int mainTexture;
 
+unsigned int uvRenderFramebuffer;
+unsigned int uvRenderTexture;
+
+float lightYaw = 0;
+float lightPitch = 0;
+float modelScale = 1;
+
+bool firstRightMouse = true;
+float pitch = 0.0f;
+float yaw = -90.0f;
+
+bool firstMiddleMouse = true;
+
+float lastX = 0.0f;
+float lastY = 0.0f;
+
+float uvMouseX = 0.0f;
+float uvMouseY = 0.0f;
+
+GLfloat* uvPixels;
+
+glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 6.0f);
+glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
 std::vector<WorldObject> worldObjects{};
 
 bool toolbarActive;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 
-void processInput(GLFWwindow* window);
+void processInput(GLFWwindow* window, float deltaTime);
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 void start(Shader& mainShader, Shader& shadowShader, Shader& quadShader, Renderer& renderer);
 
-void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& quadShader, Renderer& renderer);
+void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& quadShader, Shader& uvRenderShader, Renderer& renderer);
 
 void generateMainFramebufferAttachments();
 
+void generateUVFramebufferAttachements();
+
 void openModel();
+
+void paint();
 
 int main()
 {
@@ -91,11 +121,14 @@ int main()
 
 	Shader mainShader("default.vert", "default.frag");
 	Shader shadowShader("shadow.vert", "shadow.frag");
+	Shader uvRenderShader("uvrender.vert", "uvrender.frag");
 	Shader quadShader("quad.vert", "quad.frag");
 	Renderer renderer(mainShader, shadowShader, 4096, 4096);
 
 	float deltaTime = 0.0f;
 	float lastFrame = 0.0f;
+
+	uvPixels = new GLfloat[screen_width * screen_height * 3];
 
 	start(mainShader, shadowShader, quadShader, renderer);
 
@@ -109,13 +142,13 @@ int main()
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		processInput(window);
+		processInput(window, deltaTime);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		tick(deltaTime, mainShader, shadowShader, quadShader, renderer);
+		tick(deltaTime, mainShader, shadowShader, quadShader, uvRenderShader, renderer);
 
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -141,20 +174,116 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 	glBindFramebuffer(GL_FRAMEBUFFER, mainFramebuffer);
 	generateMainFramebufferAttachments();
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, uvRenderFramebuffer);
+	generateUVFramebufferAttachements();
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void processInput(GLFWwindow* window)
+void paint()
 {
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, true);
+	glBindTexture(GL_TEXTURE_2D, uvRenderTexture);
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, uvPixels);
+
+	GLfloat r, g, b;
+
+	size_t x = uvMouseX;
+	size_t y = uvMouseY;
+
+	size_t elmes_per_line = screen_width * 3;
+
+	size_t row = y * elmes_per_line;
+	size_t col = x * 3;
+
+	r = uvPixels[row + col];
+	g = uvPixels[row + col + 1];
+	b = uvPixels[row + col + 2];
+
+	glm::vec2 uv(r, g);
+
+	printf("U: %f, V: %f.\n", r, g);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void processInput(GLFWwindow* window, float deltaTime)
+{
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS)
+	{
+		paint();
+	}
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
+	uvMouseX = xpos;
+	uvMouseY = ypos;
+
+	//Handle rotation.
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_2) == GLFW_PRESS) {
+		if (firstRightMouse)
+		{
+			lastX = xpos;
+			lastY = ypos;
+			firstRightMouse = false;
+		}
+	}
+	if (!firstRightMouse)
+	{
+		float xoffset = xpos - lastX;
+		float yoffset = lastY - ypos;
+		lastX = xpos;
+		lastY = ypos;
+		float sensitivity = 0.2f;
+		xoffset *= sensitivity;
+		yoffset *= sensitivity;
+		yaw += xoffset;
+		pitch += yoffset;
+		pitch = std::min(pitch, 89.0f);
+		pitch = std::max(pitch, -89.0f);
+		glm::vec3 direction;
+		direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+		direction.y = sin(glm::radians(pitch));
+		direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+		cameraFront = glm::normalize(direction);
+	}
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_2) == GLFW_RELEASE)
+	{
+		firstRightMouse = true;
+	}
+
+	//Handle pan.
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_3) == GLFW_PRESS) {
+		if (firstMiddleMouse)
+		{
+			lastX = xpos;
+			lastY = ypos;
+			firstMiddleMouse = false;
+		}
+	}
+	if (!firstMiddleMouse)
+	{
+		float xoffset = xpos - lastX;
+		float yoffset = lastY - ypos;
+		lastX = xpos;
+		lastY = ypos;
+		float sensitivity = 0.005f;
+		xoffset *= sensitivity;
+		yoffset *= sensitivity;
+
+		cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * xoffset;
+		cameraPos -= glm::normalize(glm::cross(glm::cross(cameraFront, cameraUp), cameraFront)) * yoffset;
+	}
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_3) == GLFW_RELEASE)
+	{
+		firstMiddleMouse = true;
+	}
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
+	float sensitivity = 0.2f;
+	cameraPos += cameraFront * (float)yoffset * sensitivity;
 }
 
 void start(Shader& mainShader, Shader& shadowShader, Shader& quadShader, Renderer& renderer)
@@ -166,6 +295,18 @@ void start(Shader& mainShader, Shader& shadowShader, Shader& quadShader, Rendere
 	glBindFramebuffer(GL_FRAMEBUFFER, mainFramebuffer);
 
 	generateMainFramebufferAttachments();
+
+	//Check if framebuffer is complete.
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" <<
+		std::endl;
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	//Setup uv render framebuffer.
+	glGenFramebuffers(1, &uvRenderFramebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, uvRenderFramebuffer);
+
+	generateUVFramebufferAttachements();
 
 	//Check if framebuffer is complete.
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -194,37 +335,65 @@ void start(Shader& mainShader, Shader& shadowShader, Shader& quadShader, Rendere
 	glBindVertexArray(0);
 }
 
-void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& quadShader, Renderer& renderer)
+void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& quadShader, Shader& uvRenderShader, Renderer& renderer)
 {
-	//Handle UI
+	//Draw UI
 	ImGui::Begin("Toolbar", &toolbarActive, ImGuiWindowFlags_MenuBar);
-	if (ImGui::BeginMenuBar())
+	if (ImGui::Button("Open"))
 	{
-		if (ImGui::Button("Open"))
+		openModel();
+	}
+	ImGui::SliderAngle("Light Yaw", &lightYaw, 0, 360);
+	ImGui::SliderAngle("Light Pitch", &lightPitch, -90, 90);
+	float oldModelScale = modelScale;
+	if (ImGui::InputFloat("Scale", &modelScale))
+	{
+		modelScale = std::max(modelScale, 0.01f);
+		for (WorldObject& worldObject : worldObjects)
 		{
-			openModel();
+			worldObject.applyTransform(glm::scale(glm::mat4(1.f), glm::vec3(modelScale / oldModelScale)));
 		}
-		ImGui::EndMenuBar();
 	}
 	ImGui::End();
 
-	//Spin object
-	for (WorldObject& worldObject : worldObjects)
-	{
-		worldObject.applyTransform(glm::rotate(glm::mat4(1.f), glm::radians(30.f) * deltaTime, glm::vec3(0, 1, 0)));
-	}
-
-	//Render to framebuffer
-	CameraParams cameraParams{glm::vec3(0, 0, 5),
-		glm::vec3(0, 0, -1.f),
-		glm::vec3(0, 1, 0),
+	//Set common params.
+	CameraParams cameraParams{cameraPos,
+		cameraFront,
+		cameraUp,
 		glm::radians(60.f),
 		(float)screen_width/(float)screen_height};
-	DirectionalLight dirLight{ glm::vec3(1.0f, -1.0f, -0.1f),
-		glm::vec3(0.2f, 0.2f, 0.2f),
+
+	glm::vec3 lightDir = glm::rotate(glm::rotate(glm::mat4(1.0f), lightYaw, glm::vec3(0, 1, 0)), -lightPitch, glm::vec3(0, 0, 1)) * glm::vec4(1, 0, 0, 1);
+
+	DirectionalLight dirLight{ lightDir,
+		glm::vec3(0.1f, 0.1f, 0.1f),
 		glm::vec3(1.6f, 1.6f, 1.6f),
 		glm::vec3(2.0f, 2.0f, 2.0f)};
 
+	//UV render to get the UV to paint the texture on.
+	glViewport(0, 0, screen_width, screen_height);
+	glBindFramebuffer(GL_FRAMEBUFFER, uvRenderFramebuffer);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	uvRenderShader.useProgram();
+	glm::mat4 view = glm::lookAt(cameraParams.position, cameraParams.position + cameraParams.forward, cameraParams.up);
+	glm::mat4 projection = glm::perspective(cameraParams.fov, cameraParams.aspect, 0.1f, 100.0f);
+	uvRenderShader.setMat4("view", view);
+	uvRenderShader.setMat4("projection", projection);
+
+	for (const WorldObject& object : worldObjects)
+	{
+		glm::mat4 model = object.getTransform();
+
+		uvRenderShader.setMat4("model", model);
+
+		object.getModel().draw(uvRenderShader);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	//Main render
 	renderer.render(mainFramebuffer, cameraParams, worldObjects, dirLight, screen_width, screen_height);
 
 	//Draw render to screen
@@ -260,6 +429,30 @@ void generateMainFramebufferAttachments()
 	// attach it to currently bound framebuffer object
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 		mainTexture, 0);
+
+	//Add render buffer for depth and stencil.
+	unsigned int rbo;
+	glGenRenderbuffers(1, &rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, screen_width, screen_height);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+		GL_RENDERBUFFER, rbo);
+}
+
+void generateUVFramebufferAttachements()
+{
+	// generate texture
+	glGenTextures(1, &uvRenderTexture);
+	glBindTexture(GL_TEXTURE_2D, uvRenderTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, screen_width, screen_height, 0, GL_RGB,
+		GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	// attach it to currently bound framebuffer object
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+		uvRenderTexture, 0);
 
 	//Add render buffer for depth and stencil.
 	unsigned int rbo;

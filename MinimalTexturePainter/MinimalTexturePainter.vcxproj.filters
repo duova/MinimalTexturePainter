@@ -66,6 +66,9 @@
     <ClCompile Include="stb_image.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TextureBlender.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="WorldObject.h">
@@ -122,6 +125,9 @@
     <ClInclude Include="stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TextureBlender.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="MinimalTexturePainter.rc">
@@ -135,5 +141,7 @@
     <None Include="default.vert" />
     <None Include="quad.vert" />
     <None Include="quad.frag" />
+    <None Include="uvrender.vert" />
+    <None Include="uvrender.frag" />
   </ItemGroup>
 </Project>
