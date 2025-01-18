@@ -154,6 +154,7 @@
     <ClCompile Include="Model.cpp" />
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Shader.cpp" />
+    <ClCompile Include="stb_image _write.cpp" />
     <ClCompile Include="stb_image.cpp" />
     <ClCompile Include="TextureBlender.cpp" />
     <ClCompile Include="WorldObject.cpp" />
@@ -176,6 +177,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="stb_image.h" />
+    <ClInclude Include="stb_image_write.h" />
     <ClInclude Include="TextureBlender.h" />
     <ClInclude Include="WorldObject.h" />
   </ItemGroup>
@@ -183,6 +185,8 @@
     <ResourceCompile Include="MinimalTexturePainter.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="blend.frag" />
+    <None Include="blend.vert" />
     <None Include="default.frag" />
     <None Include="default.vert" />
     <None Include="quad.frag" />

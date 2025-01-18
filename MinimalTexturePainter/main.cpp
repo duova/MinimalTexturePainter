@@ -9,10 +9,12 @@
 
 #include "DirectionalLight.h"
 #include "Renderer.h"
+#include "TextureBlender.h"
 #include "WorldObject.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
+#include "stb_image_write.h"
 
 unsigned int screen_width = 1280;
 unsigned int screen_height = 720;
@@ -35,6 +37,14 @@ unsigned int mainTexture;
 
 unsigned int uvRenderFramebuffer;
 unsigned int uvRenderTexture;
+
+unsigned int currentBrushDiffuse;
+unsigned int currentBrushSpecular;
+unsigned int currentBrushNormal;
+
+float brushSize = 1;
+float brushAlpha = 1;
+float brushSourceScale = 1;
 
 float lightYaw = 0;
 float lightPitch = 0;
@@ -60,6 +70,14 @@ glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
 std::vector<WorldObject> worldObjects{};
 
+std::unique_ptr<Shader> blendShader;
+std::unique_ptr<TextureBlender> diffuseBlender;
+std::unique_ptr<TextureBlender> specularBlender;
+std::unique_ptr<TextureBlender> normalBlender;
+string diffuseName;
+string specularName;
+string normalName;
+
 bool toolbarActive;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -79,7 +97,21 @@ void generateUVFramebufferAttachements();
 
 void openModel();
 
-void paint();
+void openDiffuseTexture();
+
+void openSpecularTexture();
+
+void openNormalTexture();
+
+unsigned int loadTextureFromFile(const char* path, bool useSRGB);
+
+void saveDiffuseTexture();
+
+void saveSpecularTexture();
+
+void saveNormalTexture();
+
+void paint(float deltaTime);
 
 int main()
 {
@@ -122,6 +154,7 @@ int main()
 	Shader mainShader("default.vert", "default.frag");
 	Shader shadowShader("shadow.vert", "shadow.frag");
 	Shader uvRenderShader("uvrender.vert", "uvrender.frag");
+	blendShader = std::make_unique<Shader>("blend.vert", "blend.frag");
 	Shader quadShader("quad.vert", "quad.frag");
 	Renderer renderer(mainShader, shadowShader, 4096, 4096);
 
@@ -178,9 +211,11 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 	glBindFramebuffer(GL_FRAMEBUFFER, uvRenderFramebuffer);
 	generateUVFramebufferAttachements();
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	uvPixels = new GLfloat[screen_width * screen_height * 3];
 }
 
-void paint()
+void paint(float deltaTime)
 {
 	glBindTexture(GL_TEXTURE_2D, uvRenderTexture);
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, uvPixels);
@@ -188,7 +223,7 @@ void paint()
 	GLfloat r, g, b;
 
 	size_t x = uvMouseX;
-	size_t y = uvMouseY;
+	size_t y = screen_height - uvMouseY;
 
 	size_t elmes_per_line = screen_width * 3;
 
@@ -201,16 +236,30 @@ void paint()
 
 	glm::vec2 uv(r, g);
 
-	printf("U: %f, V: %f.\n", r, g);
-
 	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//b is used to indicate if the uv is valid.
+	if (b < 0.99) return;
+
+	if (diffuseBlender)
+	{
+		diffuseBlender->blend(uv, brushSize, brushAlpha * deltaTime, brushSourceScale, 4096);
+	}
+	if (specularBlender)
+	{
+		specularBlender->blend(uv, brushSize, brushAlpha * deltaTime, brushSourceScale, 4096);
+	}
+	if (normalBlender)
+	{
+		normalBlender->blend(uv, brushSize, brushAlpha * deltaTime, brushSourceScale, 4096);
+	}
 }
 
 void processInput(GLFWwindow* window, float deltaTime)
 {
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) == GLFW_PRESS)
 	{
-		paint();
+		paint(deltaTime);
 	}
 }
 
@@ -338,22 +387,66 @@ void start(Shader& mainShader, Shader& shadowShader, Shader& quadShader, Rendere
 void tick(float deltaTime, Shader& mainShader, Shader& shadowShader, Shader& quadShader, Shader& uvRenderShader, Renderer& renderer)
 {
 	//Draw UI
-	ImGui::Begin("Toolbar", &toolbarActive, ImGuiWindowFlags_MenuBar);
-	if (ImGui::Button("Open"))
+	ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize;
+	ImGui::Begin("Toolbar", &toolbarActive, flags);
+	if (worldObjects.empty())
 	{
-		openModel();
-	}
-	ImGui::SliderAngle("Light Yaw", &lightYaw, 0, 360);
-	ImGui::SliderAngle("Light Pitch", &lightPitch, -90, 90);
-	float oldModelScale = modelScale;
-	if (ImGui::InputFloat("Scale", &modelScale))
-	{
-		modelScale = std::max(modelScale, 0.01f);
-		for (WorldObject& worldObject : worldObjects)
+		if (ImGui::Button("Open Model"))
 		{
-			worldObject.applyTransform(glm::scale(glm::mat4(1.f), glm::vec3(modelScale / oldModelScale)));
+			openModel();
 		}
 	}
+	else
+	{
+		ImGui::Text("LIGHT");
+		ImGui::SliderAngle("Light Yaw", &lightYaw, 0, 360);
+		ImGui::SliderAngle("Light Pitch", &lightPitch, -90, 90);
+		float oldModelScale = modelScale;
+		if (ImGui::InputFloat("Scale", &modelScale))
+		{
+			modelScale = std::max(modelScale, 0.01f);
+			for (WorldObject& worldObject : worldObjects)
+			{
+				worldObject.applyTransform(glm::scale(glm::mat4(1.f), glm::vec3(modelScale / oldModelScale)));
+			}
+		}
+		ImGui::Spacing();
+		ImGui::Text("BRUSH");
+		ImGui::Text("Diffuse texture: %s", diffuseName.c_str());
+		if (ImGui::Button("Open Diffuse"))
+		{
+			openDiffuseTexture();
+		}
+		ImGui::Text("Specular texture: %s", specularName.c_str());
+		if (ImGui::Button("Open Specular"))
+		{
+			openSpecularTexture();
+		}
+		ImGui::Text("Normal texture: %s", normalName.c_str());
+		if (ImGui::Button("Open Normal"))
+		{
+			openNormalTexture();
+		}
+		ImGui::SliderFloat("Brush Size", &brushSize, 1, 100);
+		ImGui::SliderFloat("Brush Alpha", &brushAlpha, 0.1f, 10);
+		ImGui::SliderFloat("Brush Source Scale", &brushSourceScale, 0.1f, 10);
+		ImGui::Spacing();
+		ImGui::Text("SAVE");
+		if (ImGui::Button("Save Diffuse"))
+		{
+			saveDiffuseTexture();
+		}
+		if (ImGui::Button("Save Specular"))
+		{
+			saveSpecularTexture();
+		}
+		if (ImGui::Button("Save Normal"))
+		{
+			saveNormalTexture();
+		}
+	}
+
+
 	ImGui::End();
 
 	//Set common params.
@@ -479,6 +572,326 @@ void openModel()
 		//Create WorldObject.
 		worldObjects.clear();
 		worldObjects.emplace_back(glm::mat4(1.f), std::make_shared<Model>(outPath));
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+void openDiffuseTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "png,jpg" } };
+	nfdopendialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		glDeleteTextures(1, &currentBrushDiffuse);
+		currentBrushDiffuse = loadTextureFromFile(outPath, true);
+
+		//Create texture blender.
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_diffuse")
+			{
+				diffuseBlender = std::make_unique<TextureBlender>(*blendShader, texture.id, currentBrushDiffuse);
+				break;
+			}
+		}
+
+		string path = outPath;
+		int backslash = path.find_last_of('\\');
+		diffuseName = path.substr(backslash + 1, path.size() - backslash - 1);
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+void openSpecularTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "png,jpg" } };
+	nfdopendialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		glDeleteTextures(1, &currentBrushSpecular);
+		currentBrushSpecular = loadTextureFromFile(outPath, false);
+
+		//Create texture blender.
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_specular")
+			{
+				specularBlender = std::make_unique<TextureBlender>(*blendShader, texture.id, currentBrushSpecular);
+				break;
+			}
+		}
+
+		string path = outPath;
+		int backslash = path.find_last_of('\\');
+		specularName = path.substr(backslash + 1, path.size() - backslash - 1);
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+void openNormalTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "png,jpg" } };
+	nfdopendialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		glDeleteTextures(1, &currentBrushNormal);
+		currentBrushNormal = loadTextureFromFile(outPath, false);
+
+		//Create texture blender.
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_normal")
+			{
+				normalBlender = std::make_unique<TextureBlender>(*blendShader, texture.id, currentBrushNormal);
+				break;
+			}
+		}
+
+		string path = outPath;
+		int backslash = path.find_last_of('\\');
+		normalName = path.substr(backslash + 1, path.size() - backslash - 1);
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+unsigned int loadTextureFromFile(const char* path, bool useSRGB)
+{
+	string filename = string(path);
+
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrComponents;
+	//Textures are flipped.
+	stbi_set_flip_vertically_on_load(true);
+	unsigned char* data = stbi_load(filename.c_str(), &width, &height, &nrComponents, 0);
+	if (data)
+	{
+		GLenum format = 0;
+		GLenum internalFormat = 0;
+		if (nrComponents == 1)
+		{
+			format = GL_RED;
+			internalFormat = GL_RED;
+		}
+		else if (nrComponents == 3)
+		{
+			format = GL_RGB;
+			internalFormat = useSRGB ? GL_SRGB : GL_RGB;
+		}
+		else if (nrComponents == 4)
+		{
+			format = GL_RGBA;
+			internalFormat = useSRGB ? GL_SRGB_ALPHA : GL_RGBA;
+		}
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, (int)internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		stbi_image_free(data);
+
+	}
+	else
+	{
+		std::cout << "Texture failed to load at path: " << path << std::endl;
+		stbi_image_free(data);
+	}
+
+	return textureID;
+}
+
+void saveDiffuseTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "jpg" } };
+	nfdsavedialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_diffuse")
+			{
+				glBindTexture(GL_TEXTURE_2D, texture.id);
+				int w, h;
+				int miplevel = 0;
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_WIDTH, &w);
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_HEIGHT, &h);
+				GLubyte* toSave = new GLubyte[w * h * 3];
+				glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, toSave);
+				stbi_flip_vertically_on_write(true);
+				stbi_write_jpg(outPath, w, h, 3, toSave, w * 3);
+
+				glBindTexture(GL_TEXTURE_2D, 0);
+				delete[] toSave;
+				break;
+			}
+		}
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+void saveSpecularTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "jpg" } };
+	nfdsavedialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_specular")
+			{
+				glBindTexture(GL_TEXTURE_2D, texture.id);
+				int w, h;
+				int miplevel = 0;
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_WIDTH, &w);
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_HEIGHT, &h);
+				GLubyte* toSave = new GLubyte[w * h * 3];
+				glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, toSave);
+				stbi_flip_vertically_on_write(true);
+				stbi_write_jpg(outPath, w, h, 3, toSave, w * 3);
+
+				glBindTexture(GL_TEXTURE_2D, 0);
+				delete[] toSave;
+				break;
+			}
+		}
+
+		NFD_FreePathU8(outPath);
+	}
+	else if (result == NFD_CANCEL)
+	{
+	}
+	else
+	{
+		printf("Error: %s\n", NFD_GetError());
+	}
+
+	NFD_Quit();
+}
+
+void saveNormalTexture()
+{
+	NFD_Init();
+
+	nfdu8char_t* outPath;
+	nfdu8filteritem_t filters[1] = { { "Texture file", "jpg" } };
+	nfdsavedialogu8args_t args = { 0 };
+	args.filterList = filters;
+	args.filterCount = 1;
+	nfdresult_t result = NFD_SaveDialogU8_With(&outPath, &args);
+	if (result == NFD_OKAY)
+	{
+		const vector<Texture>& textures = worldObjects.front().getModel().textures_loaded;
+		for (const auto& texture : textures)
+		{
+			if (texture.type == "texture_normal")
+			{
+				glBindTexture(GL_TEXTURE_2D, texture.id);
+				int w, h;
+				int miplevel = 0;
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_WIDTH, &w);
+				glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_HEIGHT, &h);
+				GLubyte* toSave = new GLubyte[w * h * 3];
+				glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, toSave);
+				stbi_flip_vertically_on_write(true);
+				stbi_write_jpg(outPath, w, h, 3, toSave, w * 3);
+
+				glBindTexture(GL_TEXTURE_2D, 0);
+				delete[] toSave;
+				break;
+			}
+		}
 
 		NFD_FreePathU8(outPath);
 	}

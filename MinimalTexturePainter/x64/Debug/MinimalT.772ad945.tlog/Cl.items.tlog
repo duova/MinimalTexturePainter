@@ -13,5 +13,7 @@ C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\
 C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\Model.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\Model.obj
 C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\Renderer.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\Renderer.obj
 C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\Shader.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\Shader.obj
+C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\stb_image _write.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\stb_image _write.obj
 C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\stb_image.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\stb_image.obj
+C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\TextureBlender.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\TextureBlender.obj
 C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\WorldObject.cpp;C:\Users\Kai Chang\Desktop\Projects\MinimalTexturePainter\MinimalTexturePainter\x64\Debug\WorldObject.obj
